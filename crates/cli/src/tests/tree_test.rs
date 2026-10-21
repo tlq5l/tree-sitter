@@ -1,4 +1,4 @@
-use tree_sitter::{InputEdit, Parser, Point, Range, Tree};
+use tree_sitter::{InputEdit, Parser, Point, Range, Tree, TreeCursor};
 
 use super::helpers::fixtures::get_language;
 use crate::{
@@ -450,6 +450,47 @@ fn test_tree_cursor_previous_sibling() {
     );
 
     assert!(!cursor.goto_previous_sibling());
+}
+
+#[test]
+fn test_tree_cursor_previous_sibling_descendant_index() {
+    let mut parser = Parser::new();
+    parser.set_language(&get_language("json")).unwrap();
+    let tree = parser.parse("[]", None).unwrap();
+
+    let mut cursor = tree.walk();
+    assert!(cursor.goto_first_child()); // array
+    assert!(cursor.goto_last_child()); // ]
+    assert!(cursor.goto_previous_sibling()); // [
+
+    assert_eq!(cursor.descendant_index(), 2);
+
+    // Walking children backwards gives the same indices as walking forwards.
+    fn check(cursor: &mut TreeCursor) {
+        if !cursor.goto_first_child() {
+            return;
+        }
+        let mut forward = vec![cursor.descendant_index()];
+        while cursor.goto_next_sibling() {
+            forward.push(cursor.descendant_index());
+        }
+        let mut backward = vec![cursor.descendant_index()];
+        while cursor.goto_previous_sibling() {
+            backward.push(cursor.descendant_index());
+        }
+        backward.reverse();
+        assert_eq!(forward, backward);
+        for _ in 0..forward.len() {
+            check(cursor);
+            cursor.goto_next_sibling();
+        }
+        cursor.goto_parent();
+    }
+
+    let tree = parser
+        .parse(r#"{"a": [1, {"b": null}], "c": true}"#, None)
+        .unwrap();
+    check(&mut tree.walk());
 }
 
 #[test]
